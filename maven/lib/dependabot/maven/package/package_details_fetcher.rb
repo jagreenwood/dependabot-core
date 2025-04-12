@@ -42,6 +42,7 @@ module Dependabot
           @forbidden_urls = T.let([], T::Array[String])
           @pom_repository_details = T.let(nil, T.nilable(T::Array[T::Hash[String, T.untyped]]))
           @dependency_metadata = T.let({}, T::Hash[T.untyped, Nokogiri::XML::Document])
+          @dependency_metadata_from_html = T.let({}, T::Hash[T.untyped, Nokogiri::HTML::Document])
           @repository_finder = T.let(nil, T.nilable(Maven::FileParser::RepositoriesFinder))
           @repositories = T.let(nil, T.nilable(T::Array[T::Hash[String, T.untyped]]))
           @released_check = T.let({}, T::Hash[Version, T::Boolean])
@@ -63,21 +64,92 @@ module Dependabot
 
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
         def versions
-          version_details =
-            repositories.flat_map do |repository_details|
-              url = repository_details.fetch(URL_KEY)
-              xml = dependency_metadata(repository_details)
-              next [] if xml.nil?
-
-              break xml.css("versions > version")
-                       .select { |node| version_class.correct?(node.content) }
-                       .map { |node| version_class.new(node.content) }
-                       .map { |version| { version: version, source_url: url } }
+          begin
+            version_details = versions_details_from_html
+            if version_details.empty?
+              Dependabot.logger.debug("No versions found in HTML, falling back to XML parsing")
+              raise StandardError
             end
+          rescue StandardError => e
+            forbidden_urls.clear
+            # If the HTML parsing fails, try XML parsing
+            version_details = versions_details_from_xml
+            raise e if version_details.empty?
+          end
+
+          version_details.sort_by { |details| details.fetch(:version) }
+        end
+
+        sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
+        def versions_details_from_html
+          version_details = repositories.flat_map do |repository_details|
+            url = repository_details.fetch(URL_KEY)
+            html = dependency_metadata_from_html(repository_details)
+            next [] if html.nil?
+
+            break extract_version_details_from_html(html, url)
+          end
 
           raise PrivateSourceAuthenticationFailure, forbidden_urls.first if version_details.none? && forbidden_urls.any?
 
-          version_details.sort_by { |details| details.fetch(:version) }
+          version_details
+        end
+
+        sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
+        def versions_details_from_xml
+          version_details = repositories.flat_map do |repository_details|
+            url = repository_details.fetch(URL_KEY)
+            xml = dependency_metadata(repository_details)
+            next [] if xml.nil?
+
+            break extract_metadata_from_xml(xml, url)
+          end
+
+          raise PrivateSourceAuthenticationFailure, forbidden_urls.first if version_details.none? && forbidden_urls.any?
+
+          version_details
+        end
+
+        # Extracts version details from the HTML document.
+        sig do
+          params(
+            html_doc: Nokogiri::HTML::Document,
+            url: String
+          ).returns(T::Array[T::Hash[Symbol, T.untyped]])
+        end
+        def extract_version_details_from_html(html_doc, url)
+          html_doc.css("a[title]").filter_map do |link|
+            version_string = link["title"]
+            version = version_string.gsub(%r{/$}, "") # Remove trailing slash
+
+            # Release date should be located after the version, and it is within the same <pre> block
+            raw_date_text = link.next.text.strip.split("\n").last.strip # Extract the last part of the text
+
+            # Parse the date and time properly (YYYY-MM-DD HH:MM)
+            release_date = begin
+              Time.parse(raw_date_text)
+            rescue StandardError
+              nil
+            end
+
+            next unless version && version_class.correct?(version)
+
+            { version: version_class.new(version), release_date: release_date, source_url: url }
+          end
+        end
+
+        # Extracts version details from the XML document.
+        sig do
+          params(
+            xml: Nokogiri::XML::Document,
+            url: String
+          ).returns(T::Array[T::Hash[Symbol, T.untyped]])
+        end
+        def extract_metadata_from_xml(xml, url)
+          xml.css("versions > version")
+             .select { |node| version_class.correct?(node.content) }
+             .map { |node| version_class.new(node.content) }
+             .map { |version| { version: version, source_url: url } }
         end
 
         sig { params(repository_details: T::Hash[String, T.untyped]).returns(T.nilable(Nokogiri::XML::Document)) }
@@ -146,6 +218,17 @@ module Dependabot
           @dependency_metadata[repository_key]
         end
 
+        sig { params(repository_details: T::Hash[String, T.untyped]).returns(T.nilable(Nokogiri::HTML::Document)) }
+        def dependency_metadata_from_html(repository_details)
+          repository_key = repository_details.hash
+          return @dependency_metadata_from_html[repository_key] if @dependency_metadata_from_html.key?(repository_key)
+
+          html_document = fetch_dependency_metadata_from_html(repository_details)
+
+          @dependency_metadata_from_html[repository_key] ||= html_document if html_document
+          @dependency_metadata_from_html[repository_key]
+        end
+
         sig { params(response: Excon::Response, repository_url: String).void }
         def check_response(response, repository_url)
           return unless [401, 403].include?(response.status)
@@ -153,6 +236,30 @@ module Dependabot
           return if central_repo_urls.include?(repository_url)
 
           @forbidden_urls << repository_url
+        end
+
+        sig do
+          params(
+            repository_details: T::Hash[String, T.untyped]
+          ).returns(T.nilable(Nokogiri::HTML::Document))
+        end
+        def fetch_dependency_metadata_from_html(repository_details)
+          url = repository_details.fetch(URL_KEY)
+          auth_headers = repository_details.fetch(AUTH_HEADERS_KEY)
+          response = Dependabot::RegistryClient.get(
+            url: dependency_base_url(url),
+            headers: auth_headers
+          )
+          check_response(response, url)
+          return unless response.status < 400
+
+          Nokogiri::HTML(response.body)
+        rescue URI::InvalidURIError
+          nil
+        rescue Excon::Error::Socket, Excon::Error::Timeout,
+               Excon::Error::TooManyRedirects => e
+          handle_registry_error(url, e, response)
+          nil
         end
 
         sig { returns(Maven::FileParser::RepositoriesFinder) }

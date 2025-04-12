@@ -66,15 +66,14 @@ module Dependabot
         def versions
           begin
             version_details = versions_details_from_html
+            Dependabot.logger.error("No versions found in HTML, falling back to XML parsing") if version_details.empty?
             if version_details.empty?
-              Dependabot.logger.debug("No versions found in HTML, falling back to XML parsing")
-              raise StandardError
+              # Fallback to XML parsing if HTML parsing fails
+              version_details = versions_details_from_xml
             end
-          rescue StandardError => e
-            forbidden_urls.clear
-            # If the HTML parsing fails, try XML parsing
+          rescue StandardError
+            # Fallback to XML parsing if HTML parsing fails
             version_details = versions_details_from_xml
-            raise e if version_details.empty?
           end
 
           version_details.sort_by { |details| details.fetch(:version) }
@@ -82,6 +81,7 @@ module Dependabot
 
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
         def versions_details_from_html
+          forbidden_urls.clear
           version_details = repositories.flat_map do |repository_details|
             url = repository_details.fetch(URL_KEY)
             html = dependency_metadata_from_html(repository_details)
@@ -97,6 +97,7 @@ module Dependabot
 
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
         def versions_details_from_xml
+          forbidden_urls.clear
           version_details = repositories.flat_map do |repository_details|
             url = repository_details.fetch(URL_KEY)
             xml = dependency_metadata(repository_details)

@@ -47,6 +47,7 @@ module Dependabot
           @auth_headers_finder = T.let(nil, T.nilable(Utils::AuthHeadersFinder))
           @dependency_parts = T.let([], T::Array[String])
           @dependency_classifier = T.let(nil, T.nilable(String))
+          @version_details = T.let(nil, T.nilable(T::Array[T::Hash[Symbol, T.untyped]]))
         end
 
         sig { returns(Dependabot::Dependency) }
@@ -62,19 +63,22 @@ module Dependabot
 
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
         def versions
+          return @version_details if @version_details
+
           begin
-            version_details = versions_details_from_html
-            Dependabot.logger.error("No versions found in HTML, falling back to XML parsing") if version_details.empty?
-            if version_details.empty?
+            @version_details = versions_details_from_html
+            Dependabot.logger.error("No versions found in HTML, falling back to XML parsing") if @version_details.empty?
+            if @version_details.empty?
               # Fallback to XML parsing if HTML parsing fails
-              version_details = versions_details_from_xml
+              @version_details = versions_details_from_xml
             end
           rescue StandardError
             # Fallback to XML parsing if HTML parsing fails
-            version_details = versions_details_from_xml
+            @version_details = versions_details_from_xml
           end
 
-          version_details.sort_by { |details| details.fetch(:version) }
+          @version_details = @version_details.sort_by { |details| details.fetch(:version) }
+          @version_details
         end
 
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }

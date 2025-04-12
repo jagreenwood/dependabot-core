@@ -1,9 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
-require "json"
 require "time"
-require "cgi"
 require "excon"
 require "nokogiri"
 require "dependabot/registry_client"

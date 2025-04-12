@@ -31,7 +31,7 @@ module Dependabot
             credentials: T::Array[Dependabot::Credential]
           ).void
         end
-        def initialize(dependency:, dependency_files:, credentials:)
+        def initialize(dependency:, dependency_files:, credentials:) # rubocop:disable Metrics/AbcSize
           @dependency = dependency
           @dependency_files = dependency_files
           @credentials = credentials
@@ -48,6 +48,7 @@ module Dependabot
           @dependency_parts = T.let([], T::Array[String])
           @dependency_classifier = T.let(nil, T.nilable(String))
           @version_details = T.let(nil, T.nilable(T::Array[T::Hash[Symbol, T.untyped]]))
+          @package_details = T.let(nil, T.nilable(Dependabot::Package::PackageDetails))
         end
 
         sig { returns(Dependabot::Dependency) }
@@ -60,6 +61,24 @@ module Dependabot
         attr_reader :credentials
         sig { returns(T::Array[T.untyped]) }
         attr_reader :forbidden_urls
+
+        sig { returns(Dependabot::Package::PackageDetails) }
+        def package_details
+          return @package_details if @package_details
+
+          @package_details = Dependabot::Package::PackageDetails.new(
+            dependency: dependency,
+            releases: versions.map do |version_details|
+              Dependabot::Package::PackageRelease.new(
+                version: version_details.fetch(:version),
+                released_at: version_details.fetch(:release_date),
+                url: version_details.fetch(:source_url)
+              )
+            end
+          )
+
+          @package_details
+        end
 
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
         def versions

@@ -55,7 +55,9 @@ module Dependabot
 
         sig { returns(T::Array[Dependabot::Package::PackageRelease]) }
         def releases
-          package_details_fetcher.package_details.releases
+          package_details_fetcher
+            .package_details
+            .releases.reverse
         end
 
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
@@ -65,9 +67,7 @@ module Dependabot
 
         sig { returns(T.nilable(T::Hash[T.untyped, T.untyped])) }
         def latest_version_details
-          possible_versions = releases.reverse
-
-          possible_versions = filter_prereleases(possible_versions)
+          possible_versions = filter_prereleases(releases)
           possible_versions = filter_date_based_versions(possible_versions)
           possible_versions = filter_version_types(possible_versions)
           possible_versions = filter_ignored_versions(possible_versions)
@@ -80,9 +80,7 @@ module Dependabot
 
         sig { returns(T.nilable(T::Hash[T.untyped, T.untyped])) }
         def lowest_security_fix_version_details
-          possible_versions = releases.reverse
-
-          possible_versions = filter_prereleases(possible_versions)
+          possible_versions = filter_prereleases(releases)
           possible_versions = filter_date_based_versions(possible_versions)
           possible_versions = filter_version_types(possible_versions)
           possible_versions = Dependabot::UpdateCheckers::VersionFilters.filter_vulnerable_versions(possible_versions,

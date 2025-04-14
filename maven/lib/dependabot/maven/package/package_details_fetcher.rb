@@ -84,17 +84,7 @@ module Dependabot
         def versions
           return @version_details if @version_details
 
-          begin
-            @version_details = versions_details_from_html
-            Dependabot.logger.error("No versions found in HTML, falling back to XML parsing") if @version_details.empty?
-            if @version_details.empty?
-              # Fallback to XML parsing if HTML parsing fails
-              @version_details = versions_details_from_xml
-            end
-          rescue StandardError
-            # Fallback to XML parsing if HTML parsing fails
-            @version_details = versions_details_from_xml
-          end
+          @version_details = versions_details_from_xml
 
           @version_details = @version_details.sort_by { |details| details.fetch(:version) }
           @version_details

@@ -362,7 +362,7 @@ module Dependabot
         #
         # Example:
         #   repository_url: https://repo.maven.apache.org/maven2
-        #   returns: https://repo.maven.apache.org/maven2/org/junit/jupiter/junit-jupiter-api/maven-metadata.xml
+        #   returns: https://repo.maven.apache.org/maven2/com/google/guava/guava/maven-metadata.xml
         sig { params(repository_url: String).returns(String) }
         def dependency_metadata_url(repository_url)
           "#{dependency_base_url(repository_url)}/#{META_DATE_XML}"
@@ -395,9 +395,9 @@ module Dependabot
         #
         # Example:
         #   repository_url: https://repo.maven.apache.org/maven2
-        #   group_path: org/junit/jupiter
-        #   artifact_id: junit-jupiter-api
-        #   returns: https://repo.maven.apache.org/maven2/org/junit/jupiter/junit-jupiter-api
+        #   group_path: com/google/guava
+        #   artifact_id: guava
+        #   returns: https://repo.maven.apache.org/maven2/com/google/guava/guava
         sig { params(repository_url: String).returns(String) }
         def dependency_base_url(repository_url)
           group_path, artifact_id = dependency_parts
@@ -408,8 +408,8 @@ module Dependabot
         # Splits the dependency name into its group path and artifact ID.
         #
         # Example:
-        #   dependency.name: org.junit.jupiter:junit-jupiter-api
-        #   returns: ["org/junit/jupiter", "junit-jupiter-api"]
+        #   dependency.name: com.google.guava:guava
+        #   returns: ["com/google/guava", "guava"]
         sig { returns(T.nilable([String, String])) }
         def dependency_parts
           return @dependency_parts if @dependency_parts

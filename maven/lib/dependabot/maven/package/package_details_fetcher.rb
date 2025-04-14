@@ -46,7 +46,6 @@ module Dependabot
           @released_check = T.let({}, T::Hash[Dependabot::Version, T::Boolean])
           @auth_headers_finder = T.let(nil, T.nilable(Utils::AuthHeadersFinder))
           @dependency_parts = T.let([], T::Array[String])
-          @dependency_classifier = T.let(nil, T.nilable(String))
           @version_details = T.let(nil, T.nilable(T::Array[T::Hash[Symbol, T.untyped]]))
           @package_details = T.let(nil, T.nilable(Dependabot::Package::PackageDetails))
         end
@@ -376,19 +375,22 @@ module Dependabot
         #
         # Example:
         #   repository_url: https://repo.maven.apache.org/maven2
-        #   version: 5.0.0
-        #   returns: https://repo.maven.apache.org/maven2/org/junit/jupiter/junit-jupiter-api/5.0.0/junit-jupiter-api-5.0.0.jar
+        #   version: 23.6-jre
+        #   artifact_id: guava
+        #   group_id: com.google.guava
+        #   classifier: nil
+        #   type: jar
+        #   returns: https://repo.maven.apache.org/maven2/com/google/guava/guava/23.6-jre/guava-23.6-jre.jar
         sig { params(repository_url: String, version: Dependabot::Version).returns(String) }
         def dependency_files_url(repository_url, version)
           _, artifact_id = @dependency_parts
-          url = dependency_base_url(repository_url)
-          # Append the version and artifact-specific URL segments
-          url += "/#{version}"
-          url += "/#{artifact_id}-#{version}"
-          # Add classifier (if any) and file extension based on dependency type
-          url += dependency_classifier
-          url += ".#{dependency_type}"
-          url
+          base_url = dependency_base_url(repository_url)
+          type = dependency.requirements.first&.dig(:metadata, :packaging_type)
+          classifier = dependency.requirements.first&.dig(:metadata, :classifier)
+          actual_classifier = classifier.nil? ? "" : "-#{classifier}"
+
+          "#{base_url}/#{version.to_semver}/" \
+            "#{artifact_id}-#{version.to_semver}#{actual_classifier}.#{type}"
         end
 
         #           # Constructs the full URL by combining the repository URL, group path, and artifact ID
@@ -418,20 +420,6 @@ module Dependabot
           group_path = group_id&.tr(".", "/")
           @dependency_parts = [T.must(group_path), T.must(artifact_id)]
           @dependency_parts
-        end
-
-        sig { returns(String) }
-        def dependency_type
-          @dependency_type ||= T.let(dependency.requirements.first&.dig(:metadata, :packaging_type), T.nilable(String))
-        end
-
-        sig { returns(String) }
-        def dependency_classifier
-          return @dependency_classifier if @dependency_classifier
-
-          classifier = dependency.requirements.first&.dig(:metadata, :classifier)
-          @dependency_classifier = classifier.nil? ? "" : "-#{classifier}"
-          @dependency_classifier
         end
 
         sig { returns(T::Array[T.untyped]) }

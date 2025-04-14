@@ -43,7 +43,7 @@ module Dependabot
           @dependency_metadata_from_html = T.let({}, T::Hash[T.untyped, Nokogiri::HTML::Document])
           @repository_finder = T.let(nil, T.nilable(Maven::FileParser::RepositoriesFinder))
           @repositories = T.let(nil, T.nilable(T::Array[T::Hash[String, T.untyped]]))
-          @released_check = T.let({}, T::Hash[Version, T::Boolean])
+          @released = T.let({}, T::Hash[Dependabot::Version, T::Boolean])
           @auth_headers_finder = T.let(nil, T.nilable(Utils::AuthHeadersFinder))
           @dependency_parts = T.let([], T::Array[String])
           @dependency_classifier = T.let(nil, T.nilable(String))
@@ -71,7 +71,7 @@ module Dependabot
             releases: versions.map do |version_details|
               Dependabot::Package::PackageRelease.new(
                 version: version_details.fetch(:version),
-                released_at: version_details.fetch(:release_date),
+                released_at: version_details.fetch(:release_date, nil),
                 url: version_details.fetch(:source_url)
               )
             end
@@ -194,9 +194,9 @@ module Dependabot
           nil
         end
 
-        sig { params(version: Version).returns(T::Boolean) }
+        sig { params(version: Dependabot::Version).returns(T::Boolean) }
         def released?(version)
-          @released_check[version] ||=
+          @released[version] ||=
             repositories.any? do |repository_details|
               url = repository_details.fetch(URL_KEY)
               auth_headers = repository_details.fetch(AUTH_HEADERS_KEY)
@@ -337,7 +337,7 @@ module Dependabot
         #   repository_url: https://repo.maven.apache.org/maven2
         #   version: 5.0.0
         #   returns: https://repo.maven.apache.org/maven2/org/junit/jupiter/junit-jupiter-api/5.0.0/junit-jupiter-api-5.0.0.jar
-        sig { params(repository_url: String, version: Version).returns(String) }
+        sig { params(repository_url: String, version: Dependabot::Version).returns(String) }
         def dependency_files_url(repository_url, version)
           _, artifact_id = @dependency_parts
           url = dependency_base_url(repository_url)

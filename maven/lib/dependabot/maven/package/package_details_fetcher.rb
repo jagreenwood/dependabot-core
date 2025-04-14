@@ -254,8 +254,6 @@ module Dependabot
           nil
         end
 
-        private
-
         sig { returns(T::Array[T::Hash[String, T.untyped]]) }
         def repositories
           return @repositories if @repositories

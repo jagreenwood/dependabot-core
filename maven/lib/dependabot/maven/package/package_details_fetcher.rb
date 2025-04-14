@@ -43,7 +43,7 @@ module Dependabot
           @dependency_metadata_from_html = T.let({}, T::Hash[T.untyped, Nokogiri::HTML::Document])
           @repository_finder = T.let(nil, T.nilable(Maven::FileParser::RepositoriesFinder))
           @repositories = T.let(nil, T.nilable(T::Array[T::Hash[String, T.untyped]]))
-          @released = T.let({}, T::Hash[Dependabot::Version, T::Boolean])
+          @released_check = T.let({}, T::Hash[Dependabot::Version, T::Boolean])
           @auth_headers_finder = T.let(nil, T.nilable(Utils::AuthHeadersFinder))
           @dependency_parts = T.let([], T::Array[String])
           @dependency_classifier = T.let(nil, T.nilable(String))
@@ -63,7 +63,7 @@ module Dependabot
         attr_reader :forbidden_urls
 
         sig { returns(Dependabot::Package::PackageDetails) }
-        def package_details
+        def fetch
           return @package_details if @package_details
 
           releases = versions.map do |version_details|
@@ -82,6 +82,18 @@ module Dependabot
           @package_details
         end
 
+        sig { returns(T::Array[T.untyped]) }
+        def releases
+          fetch.releases
+        end
+
+        sig { params(version: Dependabot::Version).returns(T::Boolean) }
+        def released?(version)
+          released_check?(version)
+        end
+
+        private
+
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
         def versions
           return @version_details if @version_details
@@ -91,6 +103,7 @@ module Dependabot
           begin
             versions_details_hash = versions_details_hash_from_html
 
+            debugger
             @version_details = @version_details.map do |version_details|
               version = version_details[:version].to_s
               version_details_hash = versions_details_hash[version]
@@ -158,6 +171,26 @@ module Dependabot
           versions_detail_hash
         end
 
+        sig { params(version: Dependabot::Version).returns(T::Boolean) }
+        def released_check?(version)
+          @released_check[version] ||=
+            repositories.any? do |repository_details|
+              url = repository_details.fetch(URL_KEY)
+              auth_headers = repository_details.fetch(AUTH_HEADERS_KEY)
+              response = Dependabot::RegistryClient.head(
+                url: dependency_files_url(url, version),
+                headers: auth_headers
+              )
+
+              response.status < 400
+            rescue Excon::Error::Socket, Excon::Error::Timeout,
+                   Excon::Error::TooManyRedirects
+              false
+            rescue URI::InvalidURIError => e
+              raise DependencyFileNotResolvable, e.message
+            end
+        end
+
         # Extracts version details from the HTML document.
         sig do
           params(html_doc: Nokogiri::HTML::Document)
@@ -221,26 +254,6 @@ module Dependabot
                Excon::Error::TooManyRedirects => e
           handle_registry_error(url, e, response)
           nil
-        end
-
-        sig { params(version: Dependabot::Version).returns(T::Boolean) }
-        def released?(version)
-          @released[version] ||=
-            repositories.any? do |repository_details|
-              url = repository_details.fetch(URL_KEY)
-              auth_headers = repository_details.fetch(AUTH_HEADERS_KEY)
-              response = Dependabot::RegistryClient.head(
-                url: dependency_files_url(url, version),
-                headers: auth_headers
-              )
-
-              response.status < 400
-            rescue Excon::Error::Socket, Excon::Error::Timeout,
-                   Excon::Error::TooManyRedirects
-              false
-            rescue URI::InvalidURIError => e
-              raise DependencyFileNotResolvable, e.message
-            end
         end
 
         private

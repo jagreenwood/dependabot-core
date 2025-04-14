@@ -56,13 +56,8 @@ module Dependabot
         sig { returns(T::Array[Dependabot::Package::PackageRelease]) }
         def releases
           package_details_fetcher
-            .package_details
+            .fetch
             .releases.reverse
-        end
-
-        sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
-        def versions
-          package_details_fetcher.versions
         end
 
         sig { returns(T.nilable(T::Hash[T.untyped, T.untyped])) }

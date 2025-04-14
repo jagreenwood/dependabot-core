@@ -72,7 +72,7 @@ RSpec.describe Dependabot::Maven::Package::PackageDetailsFetcher do
     subject(:releases) { fetcher.releases }
 
     it "returns all the releases" do
-      expect(releases.count).to eq(70) # Replace with actual count from mock
+      expect(releases.count).to eq(70)
     end
 
     it "includes the correct version" do
@@ -93,7 +93,6 @@ RSpec.describe Dependabot::Maven::Package::PackageDetailsFetcher do
     let(:version) { Dependabot::Maven::Version.new("23.6-jre") }
 
     it "returns true for a released version" do
-      # We have already stubbed the URL to return a status 200, so we don't need to mock released_check?
       expect(released_check).to be(true)
     end
 

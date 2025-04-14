@@ -65,19 +65,22 @@ module Dependabot
 
         sig { returns(T.nilable(T::Hash[T.untyped, T.untyped])) }
         def latest_version_details
-          possible_versions = versions
+          possible_versions = releases.reverse
 
           possible_versions = filter_prereleases(possible_versions)
           possible_versions = filter_date_based_versions(possible_versions)
           possible_versions = filter_version_types(possible_versions)
           possible_versions = filter_ignored_versions(possible_versions)
 
-          possible_versions.reverse.find { |v| package_details_fetcher.released?(v.fetch(:version)) }
+          possible_versions_reverse = possible_versions.reverse
+
+          release = possible_versions_reverse.find { |r| package_details_fetcher.released?(r.version) }
+          release ? { version: release.version, source_url: release.url } : nil
         end
 
         sig { returns(T.nilable(T::Hash[T.untyped, T.untyped])) }
         def lowest_security_fix_version_details
-          possible_versions = versions
+          possible_versions = releases.reverse
 
           possible_versions = filter_prereleases(possible_versions)
           possible_versions = filter_date_based_versions(possible_versions)
@@ -87,7 +90,8 @@ module Dependabot
           possible_versions = filter_ignored_versions(possible_versions)
           possible_versions = filter_lower_versions(possible_versions)
 
-          possible_versions.find { |v| package_details_fetcher.released?(v.fetch(:version)) }
+          release = possible_versions.find { |r| package_details_fetcher.released?(r.version) }
+          release ? { version: release.version, source_url: release.url } : nil
         end
 
         private
@@ -105,31 +109,42 @@ module Dependabot
         sig { returns(T::Array[Dependabot::SecurityAdvisory]) }
         attr_reader :security_advisories
 
-        sig { params(possible_versions: T::Array[T.untyped]).returns(T::Array[T.untyped]) }
-        def filter_prereleases(possible_versions)
-          return possible_versions if wants_prerelease?
+        sig do
+          params(possible_releases: T::Array[Dependabot::Package::PackageRelease])
+            .returns(T::Array[Dependabot::Package::PackageRelease])
+        end
+        def filter_prereleases(possible_releases)
+          return possible_releases if wants_prerelease?
 
-          filtered = possible_versions.reject { |v| v.fetch(:version).prerelease? }
-          if possible_versions.count > filtered.count
-            Dependabot.logger.info("Filtered out #{possible_versions.count - filtered.count} pre-release versions")
+          filtered = possible_releases.reject { |release| release.version.prerelease? }
+          if possible_releases.count > filtered.count
+            Dependabot.logger.info("Filtered out #{possible_releases.count - filtered.count} pre-release versions")
           end
           filtered
         end
 
-        sig { params(possible_versions: T::Array[T.untyped]).returns(T::Array[T.untyped]) }
+        sig do
+          params(possible_versions: T::Array[Dependabot::Package::PackageRelease])
+            .returns(T::Array[Dependabot::Package::PackageRelease])
+        end
         def filter_date_based_versions(possible_versions)
           return possible_versions if wants_date_based_version?
 
-          filtered = possible_versions.reject { |v| v.fetch(:version) > version_class.new(1900) }
+          filtered = possible_versions.reject { |release| release.version > version_class.new(1900) }
           if possible_versions.count > filtered.count
             Dependabot.logger.info("Filtered out #{possible_versions.count - filtered.count} date-based versions")
           end
           filtered
         end
 
-        sig { params(possible_versions: T::Array[T.untyped]).returns(T::Array[T.untyped]) }
+        sig do
+          params(possible_versions: T::Array[Dependabot::Package::PackageRelease])
+            .returns(T::Array[Dependabot::Package::PackageRelease])
+        end
         def filter_version_types(possible_versions)
-          filtered = possible_versions.select { |v| matches_dependency_version_type?(v.fetch(:version)) }
+          filtered = possible_versions.select do |release|
+            matches_dependency_version_type?(release.version)
+          end
           if possible_versions.count > filtered.count
             diff = possible_versions.count - filtered.count
             classifier = dependency.version&.split(/[.\-]/)&.last
@@ -138,7 +153,10 @@ module Dependabot
           filtered
         end
 
-        sig { params(possible_versions: T::Array[T.untyped]).returns(T::Array[T.untyped]) }
+        sig do
+          params(possible_versions: T::Array[Dependabot::Package::PackageRelease])
+            .returns(T::Array[Dependabot::Package::PackageRelease])
+        end
         def filter_ignored_versions(possible_versions)
           filtered = possible_versions
 
@@ -146,7 +164,11 @@ module Dependabot
             ignore_requirements = Maven::Requirement.requirements_array(req)
             filtered =
               filtered
-              .reject { |v| ignore_requirements.any? { |r| r.satisfied_by?(v.fetch(:version)) } }
+              .reject do |release|
+                ignore_requirements.any? do |r|
+                  r.satisfied_by?(release.version)
+                end
+              end
           end
 
           if @raise_on_ignored && filter_lower_versions(filtered).empty? &&
@@ -162,12 +184,15 @@ module Dependabot
           filtered
         end
 
-        sig { params(possible_versions: T::Array[T.untyped]).returns(T::Array[T.untyped]) }
+        sig do
+          params(possible_versions: T::Array[Dependabot::Package::PackageRelease])
+            .returns(T::Array[Dependabot::Package::PackageRelease])
+        end
         def filter_lower_versions(possible_versions)
           return possible_versions unless dependency.numeric_version
 
-          possible_versions.select do |v|
-            v.fetch(:version) > dependency.numeric_version
+          possible_versions.select do |release|
+            release.version > dependency.numeric_version
           end
         end
 
@@ -185,7 +210,7 @@ module Dependabot
           T.must(dependency.numeric_version) >= version_class.new(100)
         end
 
-        sig { params(comparison_version: Version).returns(T::Boolean) }
+        sig { params(comparison_version: Dependabot::Version).returns(T::Boolean) }
         def matches_dependency_version_type?(comparison_version)
           return true unless dependency.version
 

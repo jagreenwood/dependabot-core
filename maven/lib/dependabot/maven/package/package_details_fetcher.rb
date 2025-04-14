@@ -66,15 +66,17 @@ module Dependabot
         def package_details
           return @package_details if @package_details
 
+          releases = versions.map do |version_details|
+            Dependabot::Package::PackageRelease.new(
+              version: version_details.fetch(:version),
+              released_at: version_details.fetch(:release_date, nil),
+              url: version_details.fetch(:source_url)
+            )
+          end
+
           @package_details = Dependabot::Package::PackageDetails.new(
             dependency: dependency,
-            releases: versions.map do |version_details|
-              Dependabot::Package::PackageRelease.new(
-                version: version_details.fetch(:version),
-                released_at: version_details.fetch(:release_date, nil),
-                url: version_details.fetch(:source_url)
-              )
-            end
+            releases: releases
           )
 
           @package_details

@@ -36,7 +36,6 @@ module Dependabot
           @dependency_files = dependency_files
           @credentials = credentials
 
-          @registry_urls = T.let(nil, T.nilable(T::Array[String]))
           @forbidden_urls = T.let([], T::Array[String])
           @pom_repository_details = T.let(nil, T.nilable(T::Array[T::Hash[String, T.untyped]]))
           @dependency_metadata = T.let({}, T::Hash[T.untyped, Nokogiri::XML::Document])
@@ -45,7 +44,7 @@ module Dependabot
           @repositories = T.let(nil, T.nilable(T::Array[T::Hash[String, T.untyped]]))
           @released_check = T.let({}, T::Hash[Dependabot::Version, T::Boolean])
           @auth_headers_finder = T.let(nil, T.nilable(Utils::AuthHeadersFinder))
-          @dependency_parts = T.let([], T::Array[String])
+          @dependency_parts = T.let(nil, T.nilable([String, String]))
           @version_details = T.let(nil, T.nilable(T::Array[T::Hash[Symbol, T.untyped]]))
           @package_details = T.let(nil, T.nilable(Dependabot::Package::PackageDetails))
         end
@@ -379,9 +378,10 @@ module Dependabot
         #   classifier: nil
         #   type: jar
         #   returns: https://repo.maven.apache.org/maven2/com/google/guava/guava/23.6-jre/guava-23.6-jre.jar
+        #            https://repo.maven.apache.org/maven2/com/google/guava/guava/23.7-jre/-23.7-jre.jar
         sig { params(repository_url: String, version: Dependabot::Version).returns(String) }
         def dependency_files_url(repository_url, version)
-          _, artifact_id = @dependency_parts
+          _, artifact_id = dependency_parts
           base_url = dependency_base_url(repository_url)
           type = dependency.requirements.first&.dig(:metadata, :packaging_type)
           classifier = dependency.requirements.first&.dig(:metadata, :classifier)
@@ -410,9 +410,9 @@ module Dependabot
         # Example:
         #   dependency.name: org.junit.jupiter:junit-jupiter-api
         #   returns: ["org/junit/jupiter", "junit-jupiter-api"]
-        sig { returns(T::Array[String]) }
+        sig { returns(T.nilable([String, String])) }
         def dependency_parts
-          return @dependency_parts if @dependency_parts.any?
+          return @dependency_parts if @dependency_parts
 
           group_id, artifact_id = dependency.name.split(":")
           group_path = group_id&.tr(".", "/")

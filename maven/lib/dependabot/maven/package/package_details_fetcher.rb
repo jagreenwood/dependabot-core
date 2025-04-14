@@ -103,7 +103,6 @@ module Dependabot
           begin
             versions_details_hash = versions_details_hash_from_html
 
-            debugger
             @version_details = @version_details.map do |version_details|
               version = version_details[:version].to_s
               version_details_hash = versions_details_hash[version]

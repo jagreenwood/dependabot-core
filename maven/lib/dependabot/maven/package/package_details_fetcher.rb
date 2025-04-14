@@ -86,24 +86,30 @@ module Dependabot
 
           @version_details = versions_details_from_xml
 
-          @version_details = @version_details.sort_by { |details| details.fetch(:version) }
-          @version_details
-        end
+          begin
+            versions_details_hash = versions_details_hash_from_html
 
-        sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
-        def versions_details_from_html
-          forbidden_urls.clear
-          version_details = repositories.flat_map do |repository_details|
-            url = repository_details.fetch(URL_KEY)
-            html = dependency_metadata_from_html(repository_details)
-            next [] if html.nil?
+            @version_details = @version_details.map do |version_details|
+              version = version_details[:version].to_s
+              version_details_hash = versions_details_hash[version]
 
-            break extract_version_details_from_html(html, url)
+              next version_details unless version_details_hash
+
+              release_date = version_details_hash[:release_date]
+
+              next version_details unless release_date
+
+              version_details.merge(
+                release_date: version_details_hash[:release_date],
+                source_url: version_details[:source_url]
+              )
+            end
+          rescue StandardError => e
+            Dependabot.logger.error("Error fetching version details from HTML: #{e.message}")
           end
 
-          raise PrivateSourceAuthenticationFailure, forbidden_urls.first if version_details.none? && forbidden_urls.any?
-
-          version_details
+          @version_details = @version_details.sort_by { |details| details.fetch(:version) }
+          @version_details
         end
 
         sig { returns(T::Array[T::Hash[Symbol, T.untyped]]) }
@@ -122,15 +128,43 @@ module Dependabot
           version_details
         end
 
+        sig { returns(T::Hash[String, T::Hash[Symbol, T.untyped]]) }
+        def versions_details_hash_from_html
+          forbidden_urls.clear
+
+          # Iterate over repositories and fetch the first valid result
+          versions_detail_hash = T.let({}, T::Hash[String, T::Hash[Symbol, T.untyped]])
+          repositories.each do |repository_details|
+            html = dependency_metadata_from_html(repository_details)
+
+            # Skip if no HTML data is found
+            next if html.nil?
+
+            # Break and return result from the first valid HTML
+            versions_detail_hash = extract_version_details_from_html(html)
+
+            break if versions_detail_hash.any?
+          end
+
+          # If no version details were found, but there are forbidden URLs, raise an error
+          if versions_detail_hash.any? && forbidden_urls.any?
+            raise PrivateSourceAuthenticationFailure,
+                  forbidden_urls.first
+          end
+
+          # Return the populated version details hash (may be empty if no valid repositories)
+          versions_detail_hash
+        end
+
         # Extracts version details from the HTML document.
         sig do
-          params(
-            html_doc: Nokogiri::HTML::Document,
-            url: String
-          ).returns(T::Array[T::Hash[Symbol, T.untyped]])
+          params(html_doc: Nokogiri::HTML::Document)
+            .returns(T::Hash[String, T::Hash[Symbol, T.untyped]])
         end
-        def extract_version_details_from_html(html_doc, url)
-          html_doc.css("a[title]").filter_map do |link|
+        def extract_version_details_from_html(html_doc)
+          versions_detail_hash = T.let({}, T::Hash[String, T::Hash[Symbol, T.untyped]])
+
+          html_doc.css("a[title]").each do |link|
             version_string = link["title"]
             version = version_string.gsub(%r{/$}, "") # Remove trailing slash
 
@@ -146,8 +180,11 @@ module Dependabot
 
             next unless version && version_class.correct?(version)
 
-            { version: version_class.new(version), release_date: release_date, source_url: url }
+            versions_detail_hash[version] = {
+              release_date: release_date
+            }
           end
+          versions_detail_hash
         end
 
         # Extracts version details from the XML document.
